@@ -14,6 +14,9 @@ until node -e "const m=require('/app/migrations/node_modules/mysql2');const c=m.
 done
 echo "[migrate] mysql is up"
 
+echo "[migrate] ensuring mongo app user exists..."
+node /app/ensure-mongo-user.js
+
 TABLES=$(node -e "const m=require('/app/migrations/node_modules/mysql2');const c=m.createConnection({host:process.env.MYSQL_HOST,user:process.env.MYSQL_USERNAME,password:process.env.MYSQL_PASSWORD});c.query(\"SELECT COUNT(*) AS c FROM information_schema.tables WHERE table_schema='\"+process.env.MYSQL_DATABASE_NAME+\"'\",(e,r)=>{if(e){console.log(0);c.end();return}console.log(r[0].c);c.end()});" | tail -1)
 echo "[migrate] tables in ${MYSQL_DATABASE_NAME}: ${TABLES}"
 

@@ -110,5 +110,6 @@ COPY migrations/package*.json ./migrations/
 RUN cd migrations && npm install --omit=dev --legacy-peer-deps
 COPY migrations ./migrations
 COPY docker/migrate.sh ./migrate.sh
+COPY docker/ensure-mongo-user.js ./ensure-mongo-user.js
 RUN chmod +x ./migrate.sh
 CMD ["sh", "./migrate.sh"]

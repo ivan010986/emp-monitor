@@ -42,9 +42,11 @@ services:
       MONGO_INITDB_DATABASE: ${MONGO_DATABASE}
       MONGO_APP_PASSWORD: ${MONGO_PASSWORD}
       TZ: ${TIMEZONE}
+    # NOTE: no initdb bind mount — Coolify resolves relative mounts against the
+    # app dir, not the repo checkout, which left an empty dir and the app user
+    # was never created. The `migrations` job creates it idempotently instead.
     volumes:
       - mongo_data:/data/db
-      - ./docker/mongo-init.js:/docker-entrypoint-initdb.d/mongo-init.js:ro
     healthcheck:
       test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
       interval: 10s
@@ -91,6 +93,11 @@ services:
       MONGO_USER: ${MONGO_USERNAME}
       MONGO_PASSWORD: ${MONGO_PASSWORD}
       MONGO_URI: mongo:27017/${MONGO_DATABASE}
+      # root access to (re)create the app user idempotently before apps start:
+      MONGO_ROOT_URI: mongodb://root:${MONGO_ROOT_PASSWORD}@mongo:27017/admin
+      MONGO_APP_USER: ${MONGO_USERNAME}
+      MONGO_APP_PASSWORD: ${MONGO_PASSWORD}
+      MONGO_APP_DB: ${MONGO_DATABASE}
       TZ: ${TIMEZONE}
 
   ########## App services ##########
