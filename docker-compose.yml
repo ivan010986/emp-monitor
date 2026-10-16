@@ -1,0 +1,505 @@
+# EmpMonitor full stack for Coolify (dockercompose build pack)
+#
+# Expected env vars (set them in Coolify -> Environment Variables):
+#   MYSQL_ROOT_PASSWORD, MYSQL_DATABASE=empmonitor, MYSQL_USERNAME, MYSQL_PASSWORD
+#   MONGO_DATABASE=empmonitor, MONGO_USERNAME, MONGO_PASSWORD, MONGO_ROOT_PASSWORD
+#   REDIS_PASSWORD, TIMEZONE
+#   JWT_ACCESS_TOKEN_SECRET, JWT_REFRESH_TOKEN_SECRET, JWT_SECRET,
+#   SESSION_SECRET, CRYPTO_PASSWORD, SWAGGER_PASSWORD
+#   VITE_API_URL, VITE_SOCKET_URL, VITE_BACKEND_V4_URL,
+#   VITE_CRYPTO_PASSWORD, VITE_PASSWORD_IV, EMP_ADMIN_EMAIL (optional)
+#   Optional mail: SENDGRID_API_KEY, SMTP_URL, GMAIL_EMAIL, GMAIL_PASSWORD
+#   Optional agent-build (Jenkins, normally unused on-prem): JENKINS_URL,
+#   JENKINS_AUTH_USERNAME, JENKINS_AUTH_PASSWORD, BUILD_API_URL
+
+services:
+  ########## Databases ##########
+  mysql:
+    image: mysql:8.0
+    restart: unless-stopped
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USERNAME}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      TZ: ${TIMEZONE}
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-p${MYSQL_ROOT_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 40s
+
+  mongo:
+    image: mongo:7
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: root
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD}
+      MONGO_INITDB_DATABASE: ${MONGO_DATABASE}
+      MONGO_APP_PASSWORD: ${MONGO_PASSWORD}
+      TZ: ${TIMEZONE}
+    volumes:
+      - mongo_data:/data/db
+      - ./docker/mongo-init.js:/docker-entrypoint-initdb.d/mongo-init.js:ro
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD}", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a $${REDIS_PASSWORD} ping | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  ########## DB init job (runs once; safe on redeploys) ##########
+  migrations:
+    build:
+      context: ./Backend
+      dockerfile: Dockerfile
+      target: migrations
+    restart: "no"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      mongo:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      IS_DEBUGGING: "false"
+      FRESH_DB: "false"                      # true = DROP and reload dump (destructive!)
+      MYSQL_HOST: mysql
+      MYSQL_USERNAME: ${MYSQL_USERNAME}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}      # for sequelize (store-logs-api)
+      MYSQL_DATABASE_NAME: ${MYSQL_DATABASE} # for migrations/index.js
+      MYSQL_POOL_CONNECTION_LIMIT: "10"
+      MONGO_URL: mongodb://${MONGO_USERNAME}:${MONGO_PASSWORD}@mongo:27017/${MONGO_DATABASE}
+      # migrate-mongo (production) builds URI itself from these parts:
+      MONGO_USER: ${MONGO_USERNAME}
+      MONGO_PASSWORD: ${MONGO_PASSWORD}
+      MONGO_URI: mongo:27017/${MONGO_DATABASE}
+      TZ: ${TIMEZONE}
+
+  ########## App services ##########
+  admin:
+    build:
+      context: ./Backend
+      dockerfile: Dockerfile
+      target: admin
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+      mongo:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrations:
+        condition: service_completed_successfully
+    environment:
+      NODE_ENV: production
+      IS_DEBUGGING: "false"
+      PORT: "3000"
+      VERSION: V3
+      IS_HTTP_HTTPS: https
+      API_URL_LOCAL: localhost:3000
+      API_URL_DEV: localhost:3000
+      API_URL_PRODUCTION: ${PUBLIC_API_URL}
+      MYSQL_HOST: mysql
+      MYSQL_USERNAME: ${MYSQL_USERNAME}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      MYSQL_DBNAME: ${MYSQL_DATABASE}
+      MYSQL_POOL_CONNECTION_LIMIT: "10"
+      MYSQL_TIMEOUT: "60000"
+      PAGINATION_LIMIT: "10"
+      MONGO_URI: mongodb://${MONGO_USERNAME}:${MONGO_PASSWORD}@mongo:27017/${MONGO_DATABASE}
+      SESSION_SECRET: ${SESSION_SECRET}
+      JWT_EXPIRY: 7d
+      JWT_EXPIRY_SECONDS: 30d
+      JWT_ACCESS_TOKEN_SECRET: ${JWT_ACCESS_TOKEN_SECRET}
+      JWT_REFRESH_TOKEN_SECRET: ${JWT_REFRESH_TOKEN_SECRET}
+      JWT_SECRET: ${JWT_SECRET}
+      RATE_LIMIT_DURATION: "15"
+      RATE_LIMIT_REQUEST_ALLOWED: "1000"
+      CRYPTO_PASSWORD: ${CRYPTO_PASSWORD}
+      SENDGRID_API_KEY: ${SENDGRID_API_KEY}
+      EMP_ADMIN_EMAIL: ${EMP_ADMIN_EMAIL}
+      EMP_ALERT_ADMIN_EMAIL: ${EMP_ADMIN_EMAIL}
+      WEB_LOCAL: ${PUBLIC_WEB_URL}
+      WEB_DEV: ${PUBLIC_WEB_URL}
+      WEB_PRODUCTION: ${PUBLIC_WEB_URL}
+      WEB_LINK_DEV: ${PUBLIC_WEB_URL}
+      WEB_LINK_PRODUCTION: ${PUBLIC_WEB_URL}
+      FREE_PLAN_ID: "13"
+      REDIS_HOST: redis
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      REDIS_USERNAME: default
+      SHORTNER_DEFAULT_ADDED_VALUE: "1000000000000"
+      SWAGGER_AUTH_IDS: '{"admin":"${SWAGGER_PASSWORD}"}'
+      JENKINS_URL: ${JENKINS_URL}
+      JENKINS_AUTH_USERNAME: ${JENKINS_AUTH_USERNAME}
+      JENKINS_AUTH_PASSWORD: ${JENKINS_AUTH_PASSWORD}
+      BUILD_API_URL: ${BUILD_API_URL}
+      TZ: ${TIMEZONE}
+      TIMEZONE: ${TIMEZONE}
+    expose:
+      - "3000"
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('net').connect(3000,'127.0.0.1').on('connect',()=>process.exit(0)).on('error',()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  desktop:
+    build:
+      context: ./Backend
+      dockerfile: Dockerfile
+      target: desktop
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+      mongo:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrations:
+        condition: service_completed_successfully
+    environment:
+      NODE_ENV: production   # must NOT be 'abcd' (keeps RabbitMQ path disabled)
+      IS_DEBUGGING: "false"
+      PORT: "3002"
+      VERSION: V3
+      API_URL_LOCAL: localhost:3002
+      API_URL_DEV: ${PUBLIC_AGENT_URL}
+      API_URL_PRODUCTION: ${PUBLIC_AGENT_URL}
+      ADMIN_URL_LOCAL: http://localhost:3002/
+      ADMIN_URL_DEV: ${PUBLIC_API_URL}/
+      ADMIN_URL_PRODUCTION: ${PUBLIC_API_URL}/
+      MYSQL_HOST: mysql
+      MYSQL_USERNAME: ${MYSQL_USERNAME}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      MYSQL_DBNAME: ${MYSQL_DATABASE}
+      MYSQL_POOL_CONNECTION_LIMIT: "10"
+      MYSQL_TIMEOUT: "60000"
+      PAGINATION_LIMIT: "10"
+      MONGO_URI: mongodb://${MONGO_USERNAME}:${MONGO_PASSWORD}@mongo:27017/${MONGO_DATABASE}
+      SESSION_SECRET: ${SESSION_SECRET}
+      RATE_LIMIT_DURATION: "30"
+      RATE_LIMIT_REQUEST_ALLOWED: "10000000000"
+      CRYPTO_PASSWORD: ${CRYPTO_PASSWORD}
+      JWT_ACCESS_TOKEN_SECRET: ${JWT_ACCESS_TOKEN_SECRET}
+      JWT_REFRESH_TOKEN_SECRET: ${JWT_REFRESH_TOKEN_SECRET}
+      JWT_TOKEN_LIFE: 10h
+      JWT_SECRET: ${JWT_SECRET}
+      RABBITMQ_URL: ""
+      MYSQL_TIMEOUT_INTERVAL: "65000"
+      DISABLE_KEY_STROKE_IDS: "0"
+      SHORTNER_DEFAULT_ADDED_VALUE: "1000000000000"
+      REDIS_HOST: redis
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      TZ: ${TIMEZONE}
+      TIMEZONE: ${TIMEZONE}
+    expose:
+      - "3002"
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('net').connect(3002,'127.0.0.1').on('connect',()=>process.exit(0)).on('error',()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  store-logs-api:
+    build:
+      context: ./Backend
+      dockerfile: Dockerfile
+      target: store-logs-api
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+      mongo:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrations:
+        condition: service_completed_successfully
+    environment:
+      NODE_ENV: production
+      IS_DEBUGGING: "false"
+      ENABLE_VALIDATION: "true"
+      PORT: "3001"
+      UPLOAD_PATH: ./public/uploads
+      MONGO_URI: mongodb://${MONGO_USERNAME}:${MONGO_PASSWORD}@mongo:27017/${MONGO_DATABASE}
+      MONGO_DB_NAME: ${MONGO_DATABASE}
+      MONGO_ACTIVITY_DURATION_PER_CALL_IN_SECONDS: "300"
+      MYSQL_HOST: mysql
+      MYSQL_USERNAME: ${MYSQL_USERNAME}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      DROP_TABLE: "false"
+      TIMEZONE_SEQUELIZE: "+00:00"
+      TIMEZONE: ${TIMEZONE}
+      JWT_ACCESS_TOKEN_SECRET: ${JWT_ACCESS_TOKEN_SECRET}
+      JWT_REFRESH_TOKEN_SECRET: ${JWT_REFRESH_TOKEN_SECRET}
+      JWT_EXPIRY: 10h
+      CRYPTO_PASSWORD: ${CRYPTO_PASSWORD}
+      ATTENDANCE_URL: http://desktop:3002
+      ACTIVITY_PRODUCTIVITY_URL: http://productivity_report:3005/api/v1/reports/activity
+      CRONS_JOBS_URL: http://cronjobs:3003/api/v3/enableFailedRestore
+      WEB_SOCKET_SERVER_URL: http://web-socket-server:8080/notification
+      REDIS_HOST: redis
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      MAX_REQUEST_ALLOWED: "2500000"
+      MAX_REQUEST_ALLOWED_TIMEFRAME: "150"
+      SWAGGER_AUTH_IDS: '{"admin":"${SWAGGER_PASSWORD}"}'
+      TZ: ${TIMEZONE}
+    volumes:
+      - storelogs_uploads:/app/store-logs-api/public/uploads
+    expose:
+      - "3001"
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('net').connect(3001,'127.0.0.1').on('connect',()=>process.exit(0)).on('error',()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  cronjobs:
+    build:
+      context: ./Backend
+      dockerfile: Dockerfile
+      target: cronjobs
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+      mongo:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrations:
+        condition: service_completed_successfully
+    environment:
+      NODE_ENV: production
+      IS_DEBUGGING: "false"
+      PORT: "3003"
+      API_URL_LOCAL: http://admin:3000
+      API_URL_DEV: http://admin:3000
+      API_URL_PRODUCTION: http://admin:3000
+      MYSQL_HOST: mysql
+      MYSQL_USERNAME: ${MYSQL_USERNAME}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      MYSQL_DBNAME: ${MYSQL_DATABASE}
+      MYSQL_POOL_CONNECTION_LIMIT: "10"
+      SCREENSHOTS_DEL: "1"
+      CRYPTO_PASSWORD: ${CRYPTO_PASSWORD}
+      MONGO_URI: mongodb://${MONGO_USERNAME}:${MONGO_PASSWORD}@mongo:27017/${MONGO_DATABASE}
+      SMTP_URL: ${SMTP_URL}
+      SENDGRID_API_KEY: ${SENDGRID_API_KEY}
+      EMP_ADMIN_EMAIL: ${EMP_ADMIN_EMAIL}
+      WEB_LOCAL: ${PUBLIC_WEB_URL}
+      WEB_DEV: ${PUBLIC_WEB_URL}
+      WEB_PRODUCTION: ${PUBLIC_WEB_URL}
+      REDIS_HOST: redis
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      ORGANIZATION_ID: "1,2"
+      BRAND_NAME: EmpMonitor
+      SUPPORT_EMAIL: ${EMP_ADMIN_EMAIL}
+      COPYRIGHT_YEAR: "2020-2026"
+      TZ: ${TIMEZONE}
+      TIMEZONE: ${TIMEZONE}
+    expose:
+      - "3003"
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('net').connect(3003,'127.0.0.1').on('connect',()=>process.exit(0)).on('error',()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  productivity_report:
+    build:
+      context: ./Backend
+      dockerfile: Dockerfile
+      target: productivity_report
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+      mongo:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrations:
+        condition: service_completed_successfully
+    environment:
+      NODE_ENV: production
+      IS_DEBUGGING: "false"
+      PORT: "3005"
+      VERSION: V3
+      API_URL_LOCAL: http://admin:3000
+      API_URL_DEV: http://admin:3000
+      API_URL_PRODUCTION: http://admin:3000
+      MYSQL_HOST: mysql
+      MYSQL_USERNAME: ${MYSQL_USERNAME}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      MYSQL_DBNAME: ${MYSQL_DATABASE}
+      MYSQL_POOL_CONNECTION_LIMIT: "10"
+      MYSQL_TIMEOUT: "60000"
+      PAGINATION_LIMIT: "10"
+      MONGO_URI: mongodb://${MONGO_USERNAME}:${MONGO_PASSWORD}@mongo:27017/${MONGO_DATABASE}
+      SESSION_SECRET: ${SESSION_SECRET}
+      JWT_EXPIRY: 7d
+      JWT_ACCESS_TOKEN_SECRET: ${JWT_ACCESS_TOKEN_SECRET}
+      RATE_LIMIT_DURATION: "15"
+      RATE_LIMIT_REQUEST_ALLOWED: "1000"
+      CRYPTO_PASSWORD: ${CRYPTO_PASSWORD}
+      GMAIL_EMAIL: ${GMAIL_EMAIL}
+      GMAIL_PASSWORD: ${GMAIL_PASSWORD}
+      SENDGRID_API_KEY: ${SENDGRID_API_KEY}
+      EMP_ADMIN_EMAIL: ${EMP_ADMIN_EMAIL}
+      WEB_LOCAL: ${PUBLIC_WEB_URL}
+      WEB_DEV: ${PUBLIC_WEB_URL}
+      WEB_PRODUCTION: ${PUBLIC_WEB_URL}
+      WEB_LINK_DEV: ${PUBLIC_WEB_URL}
+      WEB_LINK_PRODUCTION: ${PUBLIC_WEB_URL}
+      FREE_PLAN_ID: "13"
+      REDIS_HOST: redis
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      ALERT_SERVICE_URL: http://admin:3000/api/v3/jobs
+      TZ: ${TIMEZONE}
+      TIMEZONE: ${TIMEZONE}
+    expose:
+      - "3005"
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('net').connect(3005,'127.0.0.1').on('connect',()=>process.exit(0)).on('error',()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  web-socket-server:
+    build:
+      context: ./Backend
+      dockerfile: Dockerfile
+      target: web-socket-server
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: "8080"
+      NOTIFICATION_PREFIX: notification
+      JWT_ACCESS_TOKEN_SECRET: ${JWT_ACCESS_TOKEN_SECRET}
+      CRYPTO_PASSWORD: ${CRYPTO_PASSWORD}
+      TZ: ${TIMEZONE}
+    expose:
+      - "8080"
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('net').connect(8080,'127.0.0.1').on('connect',()=>process.exit(0)).on('error',()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  remote_socket:
+    build:
+      context: ./Backend
+      dockerfile: Dockerfile
+      target: remote_socket
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: "5003"
+      CRYPTO_PASSWORD: ${CRYPTO_PASSWORD}
+      JWT_ACCESS_TOKEN_SECRET: ${JWT_ACCESS_TOKEN_SECRET}
+      JWT_REFRESH_TOKEN_SECRET: ${JWT_REFRESH_TOKEN_SECRET}
+      JWT_TOKEN_LIFE: 10h
+      JWT_SECRET: ${JWT_SECRET}
+      REDIS_HOST: redis
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      TZ: ${TIMEZONE}
+    expose:
+      - "5003"
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('net').connect(5003,'127.0.0.1').on('connect',()=>process.exit(0)).on('error',()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  realtime:
+    build:
+      context: ./Backend
+      dockerfile: Dockerfile
+      target: realtime
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: "5004"
+      CRYPTO_PASSWORD: ${CRYPTO_PASSWORD}
+      JWT_ACCESS_TOKEN_SECRET: ${JWT_ACCESS_TOKEN_SECRET}
+      JWT_REFRESH_TOKEN_SECRET: ${JWT_REFRESH_TOKEN_SECRET}
+      JWT_TOKEN_LIFE: 10h
+      JWT_SECRET: ${JWT_SECRET}
+      REDIS_PORT: "6379"
+      REDIS_HOST: redis
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      REDIS_HOST_SUBSCRIBER: redis
+      REDIS_PASSWORD_SUBSCRIBER: ${REDIS_PASSWORD}
+      REDIS_HOST_PUBLISHER: redis
+      REDIS_PASSWORD_PUBLISHER: ${REDIS_PASSWORD}
+      TZ: ${TIMEZONE}
+    expose:
+      - "5004"
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('net').connect(5004,'127.0.0.1').on('connect',()=>process.exit(0)).on('error',()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  frontend:
+    build:
+      context: ./Frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_URL: ${VITE_API_URL}
+        VITE_SOCKET_URL: ${VITE_SOCKET_URL}
+        VITE_BACKEND_V4_URL: ${VITE_BACKEND_V4_URL}
+        VITE_CRYPTO_PASSWORD: ${VITE_CRYPTO_PASSWORD}
+        VITE_PASSWORD_IV: ${VITE_PASSWORD_IV}
+        VITE_IS_ON_PREMISE: "true"
+        VITE_SHOW_EMP_AI_ASSISTANT: "false"
+        VITE_ADDON_SUPERADMIN_ORG_ID: ${VITE_ADDON_SUPERADMIN_ORG_ID}
+    restart: unless-stopped
+    expose:
+      - "80"
+
+volumes:
+  mysql_data:
+  mongo_data:
+  redis_data:
+  storelogs_uploads:
