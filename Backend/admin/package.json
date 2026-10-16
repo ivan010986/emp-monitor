@@ -82,6 +82,7 @@
     "node-gcm": "^1.1.4",
     "node-resque": "^9.3.5",
     "nodemailer": "^8.0.4",
+    "nodemailer-mock": "1.5.8",
     "oauth": "^0.10.0",
     "one-drive-api-pools": "^1.0.4",
     "passport": "^0.7.0",
@@ -119,7 +120,6 @@
     "chai-arrays": "^2.2.0",
     "mockery": "^2.1.0",
     "node-mongodb-fixtures": "^3.2.9",
-    "nodemailer-mock": "^2.0.6",
     "sql-fixtures": "^1.0.4",
     "supertest": "^7.0.0",
     "timekeeper": "^2.3.1"

@@ -160,6 +160,11 @@ services:
       JENKINS_AUTH_USERNAME: ${JENKINS_AUTH_USERNAME}
       JENKINS_AUTH_PASSWORD: ${JENKINS_AUTH_PASSWORD}
       BUILD_API_URL: ${BUILD_API_URL}
+      # GCS buckets are only used by the agent-build/biometric flows (require
+      # GCS + private Jenkins, unavailable self-hosted) but the controllers
+      # crash at module load when these are empty — set harmless placeholders.
+      BUCKET_NAME: ${BUCKET_NAME:-empmonitor-agent-builds}
+      BUCKET_NAME_BIOMETRICS: ${BUCKET_NAME_BIOMETRICS:-empmonitor-biometrics}
       TZ: ${TIMEZONE}
       TIMEZONE: ${TIMEZONE}
     expose:
@@ -188,6 +193,8 @@ services:
         condition: service_completed_successfully
     environment:
       NODE_ENV: production   # must NOT be 'abcd' (keeps RabbitMQ path disabled)
+      NEW_RELIC_ENABLED: "false"          # newrelic pkg required at boot; agent stays off
+      NEW_RELIC_NO_CONFIG_FILE: "true"
       IS_DEBUGGING: "false"
       PORT: "3002"
       VERSION: V3

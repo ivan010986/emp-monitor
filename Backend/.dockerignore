@@ -2,7 +2,6 @@
 **/.env
 **/sample.env
 **/dist
-**/logs
 **/*.log
 **/.git
 **/.mocharc.json

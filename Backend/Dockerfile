@@ -14,6 +14,9 @@ COPY config ./config
 # admin - main REST API (Express) :3000
 ##########
 FROM base AS admin
+# skia-canvas (transitive dep, loaded at boot for report rendering) needs
+# fontconfig + fonts; sharp ships its own musl build.
+RUN apk add --no-cache fontconfig freetype ttf-freefont
 COPY admin/package*.json ./admin/
 RUN cd admin && npm install --omit=dev --legacy-peer-deps
 COPY admin ./admin
