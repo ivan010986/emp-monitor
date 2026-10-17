@@ -165,6 +165,13 @@ services:
       # crash at module load when these are empty — set harmless placeholders.
       BUCKET_NAME: ${BUCKET_NAME:-empmonitor-agent-builds}
       BUCKET_NAME_BIOMETRICS: ${BUCKET_NAME_BIOMETRICS:-empmonitor-biometrics}
+      # Self-hosted admin login: bypass the external EmpCloud auth call.
+      # /api/v1/auth/admin compares the posted password to ADMIN_PASSWORD and
+      # forwards ADMIN_DETAILS (JSON) to /api/v3/auth/admin, which
+      # auto-provisions org+admin on first login and issues the JWT.
+      AUTH_METHOD_V3: "true"
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD}
+      ADMIN_DETAILS: ${ADMIN_DETAILS}
       TZ: ${TIMEZONE}
       TIMEZONE: ${TIMEZONE}
     expose:
