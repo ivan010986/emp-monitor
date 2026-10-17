@@ -541,34 +541,20 @@ services:
   # by employee browsers AND backend containers, so we use the host IP
   # (192.168.0.206:9000) instead of a *.mefasa DNS name.
   minio:
-    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
+    # upstream minio/minio images were pulled from public registries;
+    # bitnamilegacy carries the same server, still pullable anonymously
+    image: bitnamilegacy/minio:2025.4.22
     restart: unless-stopped
-    command: server /data
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      MINIO_DEFAULT_BUCKETS: ${MINIO_BUCKET}
+      MINIO_API_PORT_NUMBER: "9000"
       TZ: ${TIMEZONE}
     volumes:
-      - minio_data:/data
+      - minio_data:/bitnami/minio/data
     ports:
       - "9000:9000"
-
-  minio-init:
-    image: amazon/aws-cli:2.38.1
-    depends_on:
-      - minio
-    entrypoint: >
-      /bin/sh -c "
-      until aws --endpoint-url http://minio:9000 s3 ls s3://$$MINIO_BUCKET 2>/dev/null
-            || aws --endpoint-url http://minio:9000 s3 mb s3://$$MINIO_BUCKET 2>/dev/null;
-      do sleep 3; done; echo 'bucket ready'"
-    environment:
-      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER}
-      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD}
-      AWS_DEFAULT_REGION: us-east-1
-      AWS_EC2_METADATA_DISABLED: "true"
-      MINIO_BUCKET: ${MINIO_BUCKET}
-    restart: "no"
 
 volumes:
   mysql_data:
