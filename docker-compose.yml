@@ -544,23 +544,69 @@ services:
   # Self-hosted remote desktop for IT support. Agents install from packages
   # that embed the server's own cert hash -> no internal CA needed for
   # agent->server trust. Web console: https://192.168.0.206:4430 (self-signed).
+  # MeshCentral self-hosted remote support. Console+agents:
+  # https://192.168.0.206:4430 (self-signed cert; agents embed the server's
+  # cert hash -> no internal CA needed for agent->server trust).
   meshcentral:
-    image: typhonragewind/meshcentral:1.1.53
+    # preloadlibs: modules pre-installed (regular tag crashes on first-boot
+    # "Unable to install required module"); mongodb build: real DB, NeDB is
+    # not recommended past ~100 devices
+    image: typhonragewind/meshcentral:preloadlibs-mongodb-1.1.53
     restart: unless-stopped
+    depends_on:
+      - mongodb
     environment:
-      ADMINUSERNAME: ${MC_ADMIN_USER}
-      ADMINPASSWORD: ${MC_ADMIN_PASSWORD}
-      HOSTNAME: "192.168.0.206"
-      ALLOW_NEW_ACCOUNTS: "false"
-      IFRAME: "false"
-      WEBRTC: "true"
+      MC_SESSION_KEY: ${MC_SESSION_KEY}
+      MC_NEW_ACCOUNTS: ${MC_NEW_ACCOUNTS:-true}
       TZ: ${TIMEZONE}
+    # config.json is rewritten on every boot from env vars (the image's own
+    # startup.sh only applies envs on first run). aliasPort 4430 -> agents
+    # are told to dial host:4430 which forwards to container :443.
+    command:
+      - bash
+      - -ec
+      - |
+        cat > /opt/meshcentral/meshcentral-data/config.json <<EOF
+        {
+          "settings": {
+            "cert": "192.168.0.206",
+            "port": 443,
+            "aliasPort": 4430,
+            "redirPort": 0,
+            "agentPong": 300,
+            "mongoDb": "mongodb://mongodb:27017/mesh",
+            "mongoDbCol": "mesh",
+            "sessionKey": "$${MC_SESSION_KEY}",
+            "WebRTC": true,
+            "AllowFraming": false,
+            "TLSOffload": false,
+            "SelfUpdate": false
+          },
+          "domains": {
+            "": {
+              "title": "Mefasa Remote Support",
+              "title2": "MeshCentral",
+              "newAccounts": $${MC_NEW_ACCOUNTS:-true},
+              "userNameIsEmail": false
+            }
+          }
+        }
+        EOF
+        exec bash /opt/meshcentral/startup.sh
     volumes:
-      - meshcentral_data:/opt/meshcentral/meshcentral-data
+      - meshcentral_data2:/opt/meshcentral/meshcentral-data
       - meshcentral_files:/opt/meshcentral/meshcentral-files
-    # image serves HTTPS on container port 443; expose on host :4430
     ports:
       - "4430:443"
+
+  # dedicated mongo for MeshCentral: the config above points at
+  # mongodb://mongodb:27017/mesh with no auth -> internal-only, no ports.
+  # service must be named "mongodb" for the container DNS name to match
+  mongodb:
+    image: mongo:7
+    restart: unless-stopped
+    volumes:
+      - meshcentral_mongo_data:/data/db
 
   minio:
     # upstream minio/minio images were pulled from public registries;
@@ -584,5 +630,6 @@ volumes:
   redis_data:
   storelogs_uploads:
   minio_data:
-  meshcentral_data:
+  meshcentral_data2:
   meshcentral_files:
+  meshcentral_mongo_data:
