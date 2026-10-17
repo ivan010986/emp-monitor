@@ -231,6 +231,14 @@ services:
       MYSQL_TIMEOUT_INTERVAL: "65000"
       DISABLE_KEY_STROKE_IDS: "0"
       SHORTNER_DEFAULT_ADDED_VALUE: "1000000000000"
+      # agent self-registration branches do env.split(',') unconditionally — empty is safe
+      MERGE_USERNAME_ORG_ID: ""
+      COMP_UNAME_ORG_ID: ""
+      COMPUTERNAMESTART: ""
+      SPECIAL_ORGANIZATION_ID: "0"
+      CHECK_PASSWORD: "false"
+      MAX_REQUEST_ALLOWED: "2500000"
+      MAX_REQUEST_ALLOWED_TIMEFRAME: "150"
       REDIS_HOST: redis
       REDIS_PASSWORD: ${REDIS_PASSWORD}
       TZ: ${TIMEZONE}
