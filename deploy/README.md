@@ -62,6 +62,42 @@ corregir el DNS interno.
 
 Exit codes: `0` ok · `1` sin admin · `2` msiexec/agente fallo · `3` config no copiada · `4` archivos fuente no encontrados.
 
+## Soporte remoto — MeshCentral
+
+Servicio separado de EmpMonitor (monitoreo), en el mismo servidor `.206`.
+
+| Que | Donde |
+|---|---|
+| Consola admin | `https://192.168.0.206:4430` (cert autofirmado — aceptar advertencia) |
+| Puerto agentes | TCP `4430` — los equipos deben alcanzar `192.168.0.206:4430` |
+| Credenciales | usuario `admin` + password en env `MC_ADMIN_PASSWORD` de Coolify |
+
+### Alta de equipos (una sola vez)
+
+1. Entrar a la consola → **My Devices** → **Add Device Group**
+   (nombre ej. `Mefasa PCs`, tipo *Agent for Windows*).
+2. Click **Add Agent** en el grupo → descargar el instalador **Windows x64**
+   (`meshagent64-MefasaPCs.exe` — ya trae embebidos: URL del servidor, hash del
+   cert y el grupo destino — por eso no hace falta CA interna).
+3. Desplegarlo con el mismo mecanismo del agente EmpMonitor:
+   `meshagent64-MefasaPCs.exe -fullinstall` (silencioso, como SYSTEM).
+   En segundos el equipo aparece en el grupo dentro de la consola.
+
+### Uso
+
+Consola → grupo → equipo → **Desktop** (remoto completo), **Terminal**,
+**Files** — todo por el navegador, sin VPN ni software extra en el tecnico.
+
+### Notas de seguridad
+
+- `newAccounts` quedo en `false` (env `MC_NEW_ACCOUNTS`) — solo el admin crea
+  usuarios desde **My Users**.
+- La consola usa cert autofirmado sobre `192.168.0.206` — los agentes traen el
+  hash embebido en su instalador, asi que la confianza agente→servidor no
+  depende del navegador ni del DNS.
+- Si se migra a hostname (ej. `soporte.mefasa`), hay que cambiar `cert` en el
+  command del compose + regenerar los instaladores de agente.
+
 ## Notas
 
 - El MSI original era build "personal" de otra org (`OjUpUCT`); `config.js` lo
