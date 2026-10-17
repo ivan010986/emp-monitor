@@ -155,6 +155,13 @@ services:
       REDIS_PASSWORD: ${REDIS_PASSWORD}
       REDIS_USERNAME: default
       SHORTNER_DEFAULT_ADDED_VALUE: "1000000000000"
+      # org-id feature gates read via unconditional process.env.X.split(',');
+      # "0" = gate disabled for all orgs (must exist or userList etc. crash)
+      ORGANIZATION_ID: "0"
+      BLOCKING_FORGOT_PASSWORD_ORG_ID: "0"
+      IP_MASKING_ORG_ID: "0"
+      ORGANIZATION_ID_WITH_OPTIONAL_USER_EMAIL: "0"
+      WORKING_HOURS_ORG_ID: "0"
       SWAGGER_AUTH_IDS: '{"admin":"${SWAGGER_PASSWORD}"}'
       JENKINS_URL: ${JENKINS_URL}
       JENKINS_AUTH_USERNAME: ${JENKINS_AUTH_USERNAME}
@@ -347,6 +354,8 @@ services:
       REDIS_HOST: redis
       REDIS_PASSWORD: ${REDIS_PASSWORD}
       ORGANIZATION_ID: "1,2"
+      IP_MASKING_ORG_ID: "0"       # unconditional .split — "0" disables gate
+      WORKING_HOURS_ORG_ID: "0"    # unconditional .split — "0" disables gate
       BRAND_NAME: EmpMonitor
       SUPPORT_EMAIL: ${EMP_ADMIN_EMAIL}
       COPYRIGHT_YEAR: "2020-2026"
