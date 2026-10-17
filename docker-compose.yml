@@ -550,7 +550,7 @@ services:
     environment:
       ADMINUSERNAME: ${MC_ADMIN_USER}
       ADMINPASSWORD: ${MC_ADMIN_PASSWORD}
-      HOSTNAME: "192.168.0.206:4430"
+      HOSTNAME: "192.168.0.206"
       ALLOW_NEW_ACCOUNTS: "false"
       IFRAME: "false"
       WEBRTC: "true"
@@ -558,8 +558,9 @@ services:
     volumes:
       - meshcentral_data:/opt/meshcentral/meshcentral-data
       - meshcentral_files:/opt/meshcentral/meshcentral-files
+    # image serves HTTPS on container port 443; expose on host :4430
     ports:
-      - "4430:4430"
+      - "4430:443"
 
   minio:
     # upstream minio/minio images were pulled from public registries;
